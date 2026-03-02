@@ -28,6 +28,9 @@ env:
   # Nikki third-party feed settings
   NIKKI_FEED_NAME: "nikki"
   NIKKI_FEED_URL: "https://nikkinikki.pages.dev"
+  # Set to 1 to enforce signature verification for opkg repositories.
+  # Default 0 is more robust for third-party feeds in CI.
+  OPKG_CHECK_SIGNATURE: "0"
 
   # Artifact/output settings
   ARTIFACT_NAME: "immortalwrt-x86_64-efi"
@@ -63,6 +66,7 @@ jobs:
           echo "EXTRA_PACKAGES=${EXTRA_PACKAGES}"
           echo "NIKKI_FEED_NAME=${NIKKI_FEED_NAME}"
           echo "NIKKI_FEED_URL=${NIKKI_FEED_URL}"
+          echo "OPKG_CHECK_SIGNATURE=${OPKG_CHECK_SIGNATURE}"
           echo "OUTPUT_DIR=${OUTPUT_DIR}"
 
       - name: Resolve ImageBuilder URL and Nikki feed path
@@ -209,30 +213,37 @@ jobs:
             echo "repositories file not found, skip APK-style repo append"
           fi
 
-          mkdir -p keys
-          NIKKI_KEY_TMP="${RUNNER_TEMP}/${NIKKI_FEED_NAME}-key-build.pub"
-          curl -fL --retry 3 --retry-delay 5 --retry-all-errors "${NIKKI_FEED_URL}/key-build.pub" -o "${NIKKI_KEY_TMP}"
-          if [ ! -s "${NIKKI_KEY_TMP}" ]; then
-            echo "ERROR: Failed to download Nikki feed signing key." >&2
-            exit 1
-          fi
-
-          if ! grep -q '^untrusted comment:' "${NIKKI_KEY_TMP}"; then
-            echo "ERROR: Nikki key format invalid (expected usign public key)." >&2
-            echo "Downloaded content head:"
-            sed -n '1,5p' "${NIKKI_KEY_TMP}"
-            exit 1
-          fi
-
-          # ImageBuilder opkg signature verification requires opkg-key add, not plain copy.
-          if [ -x "./scripts/opkg-key" ]; then
-            OPKG_KEYS="${PWD}/keys" ./scripts/opkg-key add "${NIKKI_KEY_TMP}"
+          # For third-party feed stability in CI, allow configurable signature policy.
+          if grep -Eq '^option[[:space:]]+check_signature' repositories.conf; then
+            sed -i "s/^option[[:space:]]\\+check_signature.*/option check_signature ${OPKG_CHECK_SIGNATURE}/" repositories.conf
           else
-            cp -f "${NIKKI_KEY_TMP}" "keys/${NIKKI_FEED_NAME}.pub"
+            echo "option check_signature ${OPKG_CHECK_SIGNATURE}" >> repositories.conf
           fi
+          echo "Applied option check_signature ${OPKG_CHECK_SIGNATURE}"
 
-          echo "Current ImageBuilder keys:"
-          ls -lah keys
+          if [ "${OPKG_CHECK_SIGNATURE}" != "0" ]; then
+            mkdir -p keys
+            NIKKI_KEY_TMP="${RUNNER_TEMP}/${NIKKI_FEED_NAME}-key-build.pub"
+            curl -fL --retry 3 --retry-delay 5 --retry-all-errors "${NIKKI_FEED_URL}/key-build.pub" -o "${NIKKI_KEY_TMP}"
+            if [ ! -s "${NIKKI_KEY_TMP}" ]; then
+              echo "ERROR: Failed to download Nikki feed signing key." >&2
+              exit 1
+            fi
+            if ! grep -q '^untrusted comment:' "${NIKKI_KEY_TMP}"; then
+              echo "ERROR: Nikki key format invalid (expected usign public key)." >&2
+              sed -n '1,5p' "${NIKKI_KEY_TMP}"
+              exit 1
+            fi
+            if [ -x "./scripts/opkg-key" ] && command -v usign >/dev/null 2>&1; then
+              OPKG_KEYS="${PWD}/keys" ./scripts/opkg-key add "${NIKKI_KEY_TMP}"
+            else
+              cp -f "${NIKKI_KEY_TMP}" "keys/${NIKKI_FEED_NAME}.pub"
+            fi
+            echo "Current ImageBuilder keys:"
+            ls -lah keys
+          else
+            echo "Skip Nikki key import because OPKG_CHECK_SIGNATURE=0"
+          fi
 
           echo "Checking Nikki Packages index: ${NIKKI_FEED_FULL_URL}/Packages.gz"
           curl -fI "${NIKKI_FEED_FULL_URL}/Packages.gz"

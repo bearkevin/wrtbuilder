@@ -40,6 +40,9 @@
   - 默认 `nikki`。
 - `NIKKI_FEED_URL`
   - 默认 `https://nikkinikki.pages.dev`。
+- `OPKG_CHECK_SIGNATURE`
+  - 默认 `0`（更适合第三方 feed 的 CI 构建稳定性）。
+  - 设为 `1` 可启用签名校验（需要可用的签名 key 与 `usign` 环境）。
 - `ARTIFACT_RETENTION_DAYS`
   - artifact 保留天数。
 
