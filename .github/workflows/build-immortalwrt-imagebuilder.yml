@@ -293,6 +293,48 @@ jobs:
 
           echo "Confirmed: nikki and luci-app-nikki exist in Nikki feed metadata"
 
+      - name: Prepare runtime feed config and key for image rootfs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${IB_DIR}"
+
+          FILES_DIR="${RUNNER_TEMP}/ib-files"
+          mkdir -p "${FILES_DIR}/etc/opkg/keys"
+
+          cat > "${FILES_DIR}/etc/opkg/customfeeds.conf" <<EOF
+          # add your custom package feeds here
+          #
+          src/gz ${NIKKI_FEED_NAME} ${NIKKI_FEED_FULL_URL}
+          EOF
+
+          RUNTIME_KEY="${RUNNER_TEMP}/${NIKKI_FEED_NAME}-runtime-key.pub"
+          curl -fL --retry 3 --retry-delay 5 --retry-all-errors "${NIKKI_FEED_URL}/key-build.pub" -o "${RUNTIME_KEY}"
+          if [ ! -s "${RUNTIME_KEY}" ]; then
+            echo "ERROR: failed to download runtime Nikki key." >&2
+            exit 1
+          fi
+          if ! grep -q '^untrusted comment:' "${RUNTIME_KEY}"; then
+            echo "ERROR: runtime Nikki key format invalid." >&2
+            sed -n '1,5p' "${RUNTIME_KEY}"
+            exit 1
+          fi
+
+          if [ -x "./staging_dir/host/bin/usign" ]; then
+            KEY_FINGERPRINT="$(./staging_dir/host/bin/usign -F -p "${RUNTIME_KEY}")"
+            cp -f "${RUNTIME_KEY}" "${FILES_DIR}/etc/opkg/keys/${KEY_FINGERPRINT}"
+            echo "Runtime key fingerprint: ${KEY_FINGERPRINT}"
+          else
+            cp -f "${RUNTIME_KEY}" "${FILES_DIR}/etc/opkg/keys/${NIKKI_FEED_NAME}.pub"
+          fi
+
+          echo "FILES_DIR=${FILES_DIR}" >> "${GITHUB_ENV}"
+
+          echo "--- Runtime customfeeds.conf in image ---"
+          sed -n '1,80p' "${FILES_DIR}/etc/opkg/customfeeds.conf"
+          echo "--- Runtime key files in image ---"
+          ls -lah "${FILES_DIR}/etc/opkg/keys"
+
       - name: Build custom firmware image
         shell: bash
         run: |
@@ -312,6 +354,7 @@ jobs:
             make image \
               PROFILE="${PROFILE}" \
               PACKAGES="${BASE_PACKAGES} ${EXTRA_PACKAGES}" \
+              FILES="${FILES_DIR}" \
               BIN_DIR="${OUTPUT_DIR}" \
               V=s 2>&1 | tee "${LOG_FILE}"
             MAKE_RC=${PIPESTATUS[0]}

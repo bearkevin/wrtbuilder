@@ -16,6 +16,7 @@
 - ImageBuilder 命中哪个镜像源，就自动把默认包仓库地址切到同一镜像源，避免下载到 tar 包但后续包索引仍走不可达主站。
 - 先接入第三方 feed（默认 Nikki），再执行 `make image`。
 - Nikki 公钥会通过 `opkg-key add` 导入，确保 `Packages.sig` 验签可用。
+- 构建时会把 `Nikki` 的 feed 配置与 key 直接写入镜像（`/etc/opkg/customfeeds.conf` 与 `/etc/opkg/keys/`），开机后可直接 `opkg update` 使用。
 - 在构建前自动补齐本地 `packages/Packages.gz` 占位索引，避免部分 release 在 CI 中触发 `package_index` 失败。
 - 若第三方 feed 出现偶发 `Checksum or size mismatch`，workflow 会自动清理 Nikki 缓存并重试构建。
 - 打包自定义软件包并上传 artifacts。
