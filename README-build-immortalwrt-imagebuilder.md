@@ -14,6 +14,7 @@
 - 自动下载指定版本的 ImmortalWRT ImageBuilder（主 URL 失败时自动重试备用镜像）。
 - ImageBuilder 命中哪个镜像源，就自动把默认包仓库地址切到同一镜像源，避免下载到 tar 包但后续包索引仍走不可达主站。
 - 先接入第三方 feed（默认 Nikki），再执行 `make image`。
+- Nikki 公钥会通过 `opkg-key add` 导入，确保 `Packages.sig` 验签可用。
 - 在构建前自动补齐本地 `packages/Packages.gz` 占位索引，避免部分 release 在 CI 中触发 `package_index` 失败。
 - 打包自定义软件包并上传 artifacts。
 - 上传前会校验是否存在 `*generic-squashfs-combined-efi.img.gz`，若不存在直接失败。
