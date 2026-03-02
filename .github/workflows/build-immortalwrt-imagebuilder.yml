@@ -19,7 +19,7 @@ env:
   IMAGEBUILDER_FALLBACK_BASE_URLS: "https://mirrors.sjtug.sjtu.edu.cn/immortalwrt https://mirrors.nju.edu.cn/immortalwrt https://mirrors.ustc.edu.cn/immortalwrt"
 
   # Base packages from default feeds. Add more packages here when needed.
-  BASE_PACKAGES: "luci luci-app-wechatpush"
+  BASE_PACKAGES: "luci luci-mod-rpc luci-app-wechatpush"
 
   # Extra packages. nikki/luci-app-nikki are third-party feed packages,
   # so feed integration must be completed before make image.
