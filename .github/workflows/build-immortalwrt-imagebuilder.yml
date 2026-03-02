@@ -301,11 +301,43 @@ jobs:
           mkdir -p "${OUTPUT_DIR}"
 
           echo "Running ImageBuilder make image..."
-          make image \
-            PROFILE="${PROFILE}" \
-            PACKAGES="${BASE_PACKAGES} ${EXTRA_PACKAGES}" \
-            BIN_DIR="${OUTPUT_DIR}" \
-            V=s
+          BUILD_OK=0
+          MAX_ATTEMPTS=3
+
+          for ATTEMPT in $(seq 1 "${MAX_ATTEMPTS}"); do
+            LOG_FILE="${RUNNER_TEMP}/make-image-attempt-${ATTEMPT}.log"
+            echo "=== make image attempt ${ATTEMPT}/${MAX_ATTEMPTS} ==="
+
+            set +e
+            make image \
+              PROFILE="${PROFILE}" \
+              PACKAGES="${BASE_PACKAGES} ${EXTRA_PACKAGES}" \
+              BIN_DIR="${OUTPUT_DIR}" \
+              V=s 2>&1 | tee "${LOG_FILE}"
+            MAKE_RC=${PIPESTATUS[0]}
+            set -e
+
+            if [ "${MAKE_RC}" -eq 0 ]; then
+              BUILD_OK=1
+              break
+            fi
+
+            if grep -Eq "Checksum or size mismatch for package (nikki|luci-app-nikki)|Cannot install package (nikki|luci-app-nikki)" "${LOG_FILE}" && [ "${ATTEMPT}" -lt "${MAX_ATTEMPTS}" ]; then
+              echo "Detected transient Nikki package index/cache mismatch. Cleaning Nikki cache and retrying..."
+              rm -f dl/nikki* dl/*nikki* || true
+              rm -rf build_dir/target-x86_64_musl/root-x86 || true
+              sleep 5
+              continue
+            fi
+
+            echo "ERROR: make image failed on attempt ${ATTEMPT}." >&2
+            exit "${MAKE_RC}"
+          done
+
+          if [ "${BUILD_OK}" -ne 1 ]; then
+            echo "ERROR: make image failed after ${MAX_ATTEMPTS} attempts." >&2
+            exit 1
+          fi
 
       - name: Verify output image
         shell: bash

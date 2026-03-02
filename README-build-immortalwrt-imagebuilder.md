@@ -17,6 +17,7 @@
 - 先接入第三方 feed（默认 Nikki），再执行 `make image`。
 - Nikki 公钥会通过 `opkg-key add` 导入，确保 `Packages.sig` 验签可用。
 - 在构建前自动补齐本地 `packages/Packages.gz` 占位索引，避免部分 release 在 CI 中触发 `package_index` 失败。
+- 若第三方 feed 出现偶发 `Checksum or size mismatch`，workflow 会自动清理 Nikki 缓存并重试构建。
 - 打包自定义软件包并上传 artifacts。
 - 上传前会校验是否存在 `*generic-squashfs-combined-efi.img.gz`，若不存在直接失败。
 
