@@ -115,6 +115,12 @@ jobs:
               if [ -s "${TARGET_FILE}" ]; then
                 echo "ImageBuilder download succeeded: ${CANDIDATE_URL}"
                 echo "IB_URL_USED=${CANDIDATE_URL}" >> "${GITHUB_ENV}"
+                if [[ "${CANDIDATE_URL}" == *"/releases/"* ]]; then
+                  IB_REPO_BASE_URL="${CANDIDATE_URL%%/releases/*}"
+                else
+                  IB_REPO_BASE_URL="https://downloads.immortalwrt.org"
+                fi
+                echo "IB_REPO_BASE_URL=${IB_REPO_BASE_URL}" >> "${GITHUB_ENV}"
                 DOWNLOADED=1
                 break
               fi
@@ -128,6 +134,7 @@ jobs:
             exit 1
           fi
 
+          echo "Using package repository base: ${IB_REPO_BASE_URL}"
           ls -lh "${TARGET_FILE}"
 
       - name: Extract ImageBuilder archive
@@ -183,7 +190,15 @@ jobs:
             echo "Feed ${NIKKI_FEED_NAME} already exists in repositories.conf"
           fi
 
+          # Keep package source host consistent with the mirror used for ImageBuilder archive.
+          if [ -n "${IB_REPO_BASE_URL:-}" ]; then
+            sed -i "s#https://downloads\\.immortalwrt\\.org#${IB_REPO_BASE_URL}#g" repositories.conf
+          fi
+
           if [ -f repositories ]; then
+            if [ -n "${IB_REPO_BASE_URL:-}" ]; then
+              sed -i "s#https://downloads\\.immortalwrt\\.org#${IB_REPO_BASE_URL}#g" repositories
+            fi
             if ! grep -Fq "${NIKKI_FEED_FULL_URL}" repositories; then
               echo "${NIKKI_FEED_FULL_URL}" >> repositories
               echo "Added APK-style repo URL to repositories"

@@ -12,6 +12,7 @@
 ## 关键实现点
 - 使用 `ubuntu-latest` runner。
 - 自动下载指定版本的 ImmortalWRT ImageBuilder（主 URL 失败时自动重试备用镜像）。
+- ImageBuilder 命中哪个镜像源，就自动把默认包仓库地址切到同一镜像源，避免下载到 tar 包但后续包索引仍走不可达主站。
 - 先接入第三方 feed（默认 Nikki），再执行 `make image`。
 - 在构建前自动补齐本地 `packages/Packages.gz` 占位索引，避免部分 release 在 CI 中触发 `package_index` 失败。
 - 打包自定义软件包并上传 artifacts。
