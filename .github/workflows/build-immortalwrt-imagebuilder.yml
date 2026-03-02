@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y zstd xz-utils qemu-utils
+          sudo apt-get install -y zstd xz-utils qemu-utils genisoimage
 
       - name: Show build variables
         shell: bash
