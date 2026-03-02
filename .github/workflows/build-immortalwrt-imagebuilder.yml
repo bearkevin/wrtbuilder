@@ -207,25 +207,48 @@ jobs:
           echo "--- After feed update: repositories.conf ---"
           sed -n '1,200p' repositories.conf
 
-      - name: Refresh package list and confirm Nikki packages are visible
+      - name: Bootstrap local package index placeholders
         shell: bash
         run: |
           set -euo pipefail
           cd "${IB_DIR}"
 
-          make package_list V=s | tee "${RUNNER_TEMP}/package-list.log"
+          # Some ImmortalWRT ImageBuilder releases ship packages/Packages but no
+          # packages/Packages.gz. If Packages.gz is missing, make package_reload
+          # triggers package_index, and that may fail in CI due local signing flow.
+          mkdir -p packages
+          if [ ! -f packages/Packages ]; then
+            : > packages/Packages
+          fi
+          if [ ! -f packages/Packages.gz ]; then
+            gzip -9nc packages/Packages > packages/Packages.gz
+          fi
+          ls -lah packages
 
-          if ! grep -Eq '^nikki[[:space:]]' "${RUNNER_TEMP}/package-list.log"; then
-            echo "ERROR: package 'nikki' not found after feed integration." >&2
+      - name: Confirm Nikki packages are visible in feed metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          NIKKI_PACKAGES_GZ="${RUNNER_TEMP}/nikki-Packages.gz"
+          NIKKI_PACKAGES_TXT="${RUNNER_TEMP}/nikki-Packages.txt"
+
+          curl -fL --retry 3 --retry-delay 3 --retry-all-errors "${NIKKI_FEED_FULL_URL}/Packages.gz" -o "${NIKKI_PACKAGES_GZ}"
+          gzip -dc "${NIKKI_PACKAGES_GZ}" > "${NIKKI_PACKAGES_TXT}"
+
+          echo "Feed metadata sample:"
+          sed -n '1,60p' "${NIKKI_PACKAGES_TXT}"
+
+          if ! grep -Eq '^Package:[[:space:]]+nikki$' "${NIKKI_PACKAGES_TXT}"; then
+            echo "ERROR: package 'nikki' not found in Nikki feed metadata." >&2
             exit 1
           fi
 
-          if ! grep -Eq '^luci-app-nikki[[:space:]]' "${RUNNER_TEMP}/package-list.log"; then
-            echo "ERROR: package 'luci-app-nikki' not found after feed integration." >&2
+          if ! grep -Eq '^Package:[[:space:]]+luci-app-nikki$' "${NIKKI_PACKAGES_TXT}"; then
+            echo "ERROR: package 'luci-app-nikki' not found in Nikki feed metadata." >&2
             exit 1
           fi
 
-          echo "Confirmed: nikki and luci-app-nikki are visible to ImageBuilder"
+          echo "Confirmed: nikki and luci-app-nikki exist in Nikki feed metadata"
 
       - name: Build custom firmware image
         shell: bash

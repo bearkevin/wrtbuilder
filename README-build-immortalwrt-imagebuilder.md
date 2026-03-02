@@ -13,6 +13,7 @@
 - 使用 `ubuntu-latest` runner。
 - 自动下载指定版本的 ImmortalWRT ImageBuilder（主 URL 失败时自动重试备用镜像）。
 - 先接入第三方 feed（默认 Nikki），再执行 `make image`。
+- 在构建前自动补齐本地 `packages/Packages.gz` 占位索引，避免部分 release 在 CI 中触发 `package_index` 失败。
 - 打包自定义软件包并上传 artifacts。
 - 上传前会校验是否存在 `*generic-squashfs-combined-efi.img.gz`，若不存在直接失败。
 
