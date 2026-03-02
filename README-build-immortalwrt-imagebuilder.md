@@ -11,7 +11,7 @@
 
 ## 关键实现点
 - 使用 `ubuntu-latest` runner。
-- 自动下载指定版本的 ImmortalWRT ImageBuilder。
+- 自动下载指定版本的 ImmortalWRT ImageBuilder（主 URL 失败时自动重试备用镜像）。
 - 先接入第三方 feed（默认 Nikki），再执行 `make image`。
 - 打包自定义软件包并上传 artifacts。
 - 上传前会校验是否存在 `*generic-squashfs-combined-efi.img.gz`，若不存在直接失败。
@@ -26,6 +26,9 @@
 - `IMAGEBUILDER_URL`
   - 为空时会按版本自动拼接官方下载地址。
   - 若你有自定义镜像源，可填完整 URL。
+- `IMAGEBUILDER_FALLBACK_BASE_URLS`
+  - 仅当 `IMAGEBUILDER_URL` 为空时生效。
+  - 表示官方下载失败后依次重试的镜像源列表（空格分隔）。
 - `BASE_PACKAGES`
   - 官方/默认 feed 包列表（可继续追加）。
 - `EXTRA_PACKAGES`

@@ -15,6 +15,8 @@ env:
 
   # If empty, workflow auto-generates URL from IMMORTALWRT_VERSION/TARGET/SUBTARGET
   IMAGEBUILDER_URL: ""
+  # Fallback mirrors used only when IMAGEBUILDER_URL is empty and primary URL fails.
+  IMAGEBUILDER_FALLBACK_BASE_URLS: "https://mirrors.sjtug.sjtu.edu.cn/immortalwrt https://mirrors.nju.edu.cn/immortalwrt https://mirrors.ustc.edu.cn/immortalwrt"
 
   # Base packages from default feeds. Add more packages here when needed.
   BASE_PACKAGES: "luci luci-app-wechatpush"
@@ -56,6 +58,7 @@ jobs:
           echo "SUBTARGET=${SUBTARGET}"
           echo "PROFILE=${PROFILE}"
           echo "IMAGEBUILDER_URL=${IMAGEBUILDER_URL:-<auto>}"
+          echo "IMAGEBUILDER_FALLBACK_BASE_URLS=${IMAGEBUILDER_FALLBACK_BASE_URLS}"
           echo "BASE_PACKAGES=${BASE_PACKAGES}"
           echo "EXTRA_PACKAGES=${EXTRA_PACKAGES}"
           echo "NIKKI_FEED_NAME=${NIKKI_FEED_NAME}"
@@ -67,40 +70,65 @@ jobs:
         run: |
           set -euo pipefail
 
+          CANDIDATES=()
           if [ -n "${IMAGEBUILDER_URL}" ]; then
-            IB_URL="${IMAGEBUILDER_URL}"
+            CANDIDATES+=("${IMAGEBUILDER_URL}")
           else
-            IB_URL="https://downloads.immortalwrt.org/releases/${IMMORTALWRT_VERSION}/targets/${TARGET}/${SUBTARGET}/immortalwrt-imagebuilder-${IMMORTALWRT_VERSION}-${TARGET}-${SUBTARGET}.Linux-x86_64.tar.zst"
+            IB_REL_PATH="releases/${IMMORTALWRT_VERSION}/targets/${TARGET}/${SUBTARGET}/immortalwrt-imagebuilder-${IMMORTALWRT_VERSION}-${TARGET}-${SUBTARGET}.Linux-x86_64.tar.zst"
+            CANDIDATES+=("https://downloads.immortalwrt.org/${IB_REL_PATH}")
+            for base in ${IMAGEBUILDER_FALLBACK_BASE_URLS}; do
+              CANDIDATES+=("${base%/}/${IB_REL_PATH}")
+            done
           fi
+
+          FIRST_URL="${CANDIDATES[0]}"
+          IB_ARCHIVE_NAME="${FIRST_URL##*/}"
+          IB_CANDIDATE_FILE="${RUNNER_TEMP}/ib-candidate-urls.txt"
+          printf '%s\n' "${CANDIDATES[@]}" > "${IB_CANDIDATE_FILE}"
 
           NIKKI_FEED_BRANCH="openwrt-${IMMORTALWRT_VERSION%.*}"
           NIKKI_FEED_ARCH="x86_64"
           NIKKI_FEED_FULL_URL="${NIKKI_FEED_URL}/${NIKKI_FEED_BRANCH}/${NIKKI_FEED_ARCH}/${NIKKI_FEED_NAME}"
 
-          IB_ARCHIVE_NAME="${IB_URL##*/}"
-
-          echo "IB_URL=${IB_URL}" >> "${GITHUB_ENV}"
           echo "IB_ARCHIVE_NAME=${IB_ARCHIVE_NAME}" >> "${GITHUB_ENV}"
+          echo "IB_CANDIDATE_FILE=${IB_CANDIDATE_FILE}" >> "${GITHUB_ENV}"
           echo "NIKKI_FEED_BRANCH=${NIKKI_FEED_BRANCH}" >> "${GITHUB_ENV}"
           echo "NIKKI_FEED_ARCH=${NIKKI_FEED_ARCH}" >> "${GITHUB_ENV}"
           echo "NIKKI_FEED_FULL_URL=${NIKKI_FEED_FULL_URL}" >> "${GITHUB_ENV}"
 
-          echo "Resolved IB_URL=${IB_URL}"
+          echo "Resolved ImageBuilder candidate URLs:"
+          nl -ba "${IB_CANDIDATE_FILE}"
           echo "Resolved NIKKI_FEED_FULL_URL=${NIKKI_FEED_FULL_URL}"
 
       - name: Download ImageBuilder archive
         shell: bash
         run: |
           set -euo pipefail
-          echo "Downloading ImageBuilder from: ${IB_URL}"
-          curl -fL --retry 3 --retry-delay 5 --retry-all-errors "${IB_URL}" -o "${RUNNER_TEMP}/${IB_ARCHIVE_NAME}"
+          TARGET_FILE="${RUNNER_TEMP}/${IB_ARCHIVE_NAME}"
+          rm -f "${TARGET_FILE}"
+          DOWNLOADED=0
 
-          if [ ! -s "${RUNNER_TEMP}/${IB_ARCHIVE_NAME}" ]; then
-            echo "ERROR: ImageBuilder archive download failed or file is empty." >&2
+          while IFS= read -r CANDIDATE_URL; do
+            [ -z "${CANDIDATE_URL}" ] && continue
+            echo "Trying ImageBuilder URL: ${CANDIDATE_URL}"
+            if curl -fL --retry 2 --retry-delay 3 --retry-all-errors --connect-timeout 15 --max-time 1200 "${CANDIDATE_URL}" -o "${TARGET_FILE}"; then
+              if [ -s "${TARGET_FILE}" ]; then
+                echo "ImageBuilder download succeeded: ${CANDIDATE_URL}"
+                echo "IB_URL_USED=${CANDIDATE_URL}" >> "${GITHUB_ENV}"
+                DOWNLOADED=1
+                break
+              fi
+            fi
+            echo "Download failed for: ${CANDIDATE_URL}"
+            rm -f "${TARGET_FILE}"
+          done < "${IB_CANDIDATE_FILE}"
+
+          if [ "${DOWNLOADED}" -ne 1 ]; then
+            echo "ERROR: ImageBuilder download failed for all candidate URLs." >&2
             exit 1
           fi
 
-          ls -lh "${RUNNER_TEMP}/${IB_ARCHIVE_NAME}"
+          ls -lh "${TARGET_FILE}"
 
       - name: Extract ImageBuilder archive
         shell: bash
