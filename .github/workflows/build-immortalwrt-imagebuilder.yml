@@ -1,0 +1,255 @@
+name: Build ImmortalWRT ImageBuilder x86_64 EFI
+
+on:
+  workflow_dispatch:
+  # Optional: enable scheduled build later
+  # schedule:
+  #   - cron: '0 3 * * 0'
+
+env:
+  # Core build target settings
+  IMMORTALWRT_VERSION: "24.10.2"
+  TARGET: "x86"
+  SUBTARGET: "64"
+  PROFILE: "generic"
+
+  # If empty, workflow auto-generates URL from IMMORTALWRT_VERSION/TARGET/SUBTARGET
+  IMAGEBUILDER_URL: ""
+
+  # Base packages from default feeds. Add more packages here when needed.
+  BASE_PACKAGES: "luci luci-app-wechatpush"
+
+  # Extra packages. nikki/luci-app-nikki are third-party feed packages,
+  # so feed integration must be completed before make image.
+  EXTRA_PACKAGES: "nikki luci-app-nikki"
+
+  # Nikki third-party feed settings
+  NIKKI_FEED_NAME: "nikki"
+  NIKKI_FEED_URL: "https://nikkinikki.pages.dev"
+
+  # Artifact/output settings
+  ARTIFACT_NAME: "immortalwrt-x86_64-efi"
+  ARTIFACT_RETENTION_DAYS: "7"
+  OUTPUT_DIR: "${{ github.workspace }}/output"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install host tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y zstd xz-utils
+
+      - name: Show build variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "IMMORTALWRT_VERSION=${IMMORTALWRT_VERSION}"
+          echo "TARGET=${TARGET}"
+          echo "SUBTARGET=${SUBTARGET}"
+          echo "PROFILE=${PROFILE}"
+          echo "IMAGEBUILDER_URL=${IMAGEBUILDER_URL:-<auto>}"
+          echo "BASE_PACKAGES=${BASE_PACKAGES}"
+          echo "EXTRA_PACKAGES=${EXTRA_PACKAGES}"
+          echo "NIKKI_FEED_NAME=${NIKKI_FEED_NAME}"
+          echo "NIKKI_FEED_URL=${NIKKI_FEED_URL}"
+          echo "OUTPUT_DIR=${OUTPUT_DIR}"
+
+      - name: Resolve ImageBuilder URL and Nikki feed path
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -n "${IMAGEBUILDER_URL}" ]; then
+            IB_URL="${IMAGEBUILDER_URL}"
+          else
+            IB_URL="https://downloads.immortalwrt.org/releases/${IMMORTALWRT_VERSION}/targets/${TARGET}/${SUBTARGET}/immortalwrt-imagebuilder-${IMMORTALWRT_VERSION}-${TARGET}-${SUBTARGET}.Linux-x86_64.tar.zst"
+          fi
+
+          NIKKI_FEED_BRANCH="openwrt-${IMMORTALWRT_VERSION%.*}"
+          NIKKI_FEED_ARCH="x86_64"
+          NIKKI_FEED_FULL_URL="${NIKKI_FEED_URL}/${NIKKI_FEED_BRANCH}/${NIKKI_FEED_ARCH}/${NIKKI_FEED_NAME}"
+
+          IB_ARCHIVE_NAME="${IB_URL##*/}"
+
+          echo "IB_URL=${IB_URL}" >> "${GITHUB_ENV}"
+          echo "IB_ARCHIVE_NAME=${IB_ARCHIVE_NAME}" >> "${GITHUB_ENV}"
+          echo "NIKKI_FEED_BRANCH=${NIKKI_FEED_BRANCH}" >> "${GITHUB_ENV}"
+          echo "NIKKI_FEED_ARCH=${NIKKI_FEED_ARCH}" >> "${GITHUB_ENV}"
+          echo "NIKKI_FEED_FULL_URL=${NIKKI_FEED_FULL_URL}" >> "${GITHUB_ENV}"
+
+          echo "Resolved IB_URL=${IB_URL}"
+          echo "Resolved NIKKI_FEED_FULL_URL=${NIKKI_FEED_FULL_URL}"
+
+      - name: Download ImageBuilder archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Downloading ImageBuilder from: ${IB_URL}"
+          curl -fL --retry 3 --retry-delay 5 --retry-all-errors "${IB_URL}" -o "${RUNNER_TEMP}/${IB_ARCHIVE_NAME}"
+
+          if [ ! -s "${RUNNER_TEMP}/${IB_ARCHIVE_NAME}" ]; then
+            echo "ERROR: ImageBuilder archive download failed or file is empty." >&2
+            exit 1
+          fi
+
+          ls -lh "${RUNNER_TEMP}/${IB_ARCHIVE_NAME}"
+
+      - name: Extract ImageBuilder archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/ib"
+
+          case "${IB_ARCHIVE_NAME}" in
+            *.tar.zst)
+              tar --zstd -xf "${RUNNER_TEMP}/${IB_ARCHIVE_NAME}" -C "${RUNNER_TEMP}/ib"
+              ;;
+            *.tar.xz)
+              tar -xJf "${RUNNER_TEMP}/${IB_ARCHIVE_NAME}" -C "${RUNNER_TEMP}/ib"
+              ;;
+            *)
+              echo "ERROR: Unsupported ImageBuilder archive format: ${IB_ARCHIVE_NAME}" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "Extracted content:"
+          ls -la "${RUNNER_TEMP}/ib"
+
+          IB_DIR="$(find "${RUNNER_TEMP}/ib" -mindepth 1 -maxdepth 1 -type d -name 'immortalwrt-imagebuilder-*' | head -n 1)"
+          if [ -z "${IB_DIR}" ]; then
+            echo "ERROR: Cannot locate extracted ImageBuilder directory." >&2
+            exit 1
+          fi
+
+          echo "IB_DIR=${IB_DIR}" >> "${GITHUB_ENV}"
+          echo "Using IB_DIR=${IB_DIR}"
+
+      - name: Configure Nikki third-party feed (before build)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${IB_DIR}"
+
+          echo "--- Before feed update: repositories.conf ---"
+          if [ -f repositories.conf ]; then
+            sed -n '1,200p' repositories.conf
+          else
+            echo "repositories.conf not found, creating a new one."
+            touch repositories.conf
+          fi
+
+          FEED_LINE="src/gz ${NIKKI_FEED_NAME} ${NIKKI_FEED_FULL_URL}"
+          if ! grep -Eq "^src/gz[[:space:]]+${NIKKI_FEED_NAME}[[:space:]]+" repositories.conf; then
+            echo "${FEED_LINE}" >> repositories.conf
+            echo "Added feed line: ${FEED_LINE}"
+          else
+            echo "Feed ${NIKKI_FEED_NAME} already exists in repositories.conf"
+          fi
+
+          if [ -f repositories ]; then
+            if ! grep -Fq "${NIKKI_FEED_FULL_URL}" repositories; then
+              echo "${NIKKI_FEED_FULL_URL}" >> repositories
+              echo "Added APK-style repo URL to repositories"
+            else
+              echo "APK-style repositories already contain Nikki URL"
+            fi
+          else
+            echo "repositories file not found, skip APK-style repo append"
+          fi
+
+          mkdir -p keys
+          curl -fL --retry 3 --retry-delay 5 --retry-all-errors "${NIKKI_FEED_URL}/key-build.pub" -o "keys/${NIKKI_FEED_NAME}.pub"
+          if [ ! -s "keys/${NIKKI_FEED_NAME}.pub" ]; then
+            echo "ERROR: Failed to download Nikki feed signing key." >&2
+            exit 1
+          fi
+
+          echo "Checking Nikki Packages index: ${NIKKI_FEED_FULL_URL}/Packages.gz"
+          curl -fI "${NIKKI_FEED_FULL_URL}/Packages.gz"
+
+          echo "--- After feed update: repositories.conf ---"
+          sed -n '1,200p' repositories.conf
+
+      - name: Refresh package list and confirm Nikki packages are visible
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${IB_DIR}"
+
+          make package_list V=s | tee "${RUNNER_TEMP}/package-list.log"
+
+          if ! grep -Eq '^nikki[[:space:]]' "${RUNNER_TEMP}/package-list.log"; then
+            echo "ERROR: package 'nikki' not found after feed integration." >&2
+            exit 1
+          fi
+
+          if ! grep -Eq '^luci-app-nikki[[:space:]]' "${RUNNER_TEMP}/package-list.log"; then
+            echo "ERROR: package 'luci-app-nikki' not found after feed integration." >&2
+            exit 1
+          fi
+
+          echo "Confirmed: nikki and luci-app-nikki are visible to ImageBuilder"
+
+      - name: Build custom firmware image
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${IB_DIR}"
+          mkdir -p "${OUTPUT_DIR}"
+
+          echo "Running ImageBuilder make image..."
+          make image \
+            PROFILE="${PROFILE}" \
+            PACKAGES="${BASE_PACKAGES} ${EXTRA_PACKAGES}" \
+            BIN_DIR="${OUTPUT_DIR}" \
+            V=s
+
+      - name: Verify output image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Listing output directory: ${OUTPUT_DIR}"
+          ls -lah "${OUTPUT_DIR}"
+
+          find "${OUTPUT_DIR}" -maxdepth 1 -type f -name '*generic-squashfs-combined-efi.img.gz' | tee "${RUNNER_TEMP}/matched-images.txt"
+
+          if [ ! -s "${RUNNER_TEMP}/matched-images.txt" ]; then
+            echo "ERROR: No image matched '*generic-squashfs-combined-efi.img.gz'." >&2
+            exit 1
+          fi
+
+      - name: Prepare artifact payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACT_DIR="${RUNNER_TEMP}/artifact-payload"
+          mkdir -p "${ARTIFACT_DIR}"
+
+          while IFS= read -r img; do
+            cp -v "${img}" "${ARTIFACT_DIR}/"
+          done < "${RUNNER_TEMP}/matched-images.txt"
+
+          if [ -f "${OUTPUT_DIR}/sha256sums" ]; then
+            cp -v "${OUTPUT_DIR}/sha256sums" "${ARTIFACT_DIR}/"
+          fi
+
+          echo "Artifact payload:"
+          ls -lah "${ARTIFACT_DIR}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/artifact-payload/*
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+          if-no-files-found: error
