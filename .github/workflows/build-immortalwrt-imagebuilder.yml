@@ -221,29 +221,28 @@ jobs:
           fi
           echo "Applied option check_signature ${OPKG_CHECK_SIGNATURE}"
 
-          if [ "${OPKG_CHECK_SIGNATURE}" != "0" ]; then
-            mkdir -p keys
-            NIKKI_KEY_TMP="${RUNNER_TEMP}/${NIKKI_FEED_NAME}-key-build.pub"
-            curl -fL --retry 3 --retry-delay 5 --retry-all-errors "${NIKKI_FEED_URL}/key-build.pub" -o "${NIKKI_KEY_TMP}"
-            if [ ! -s "${NIKKI_KEY_TMP}" ]; then
-              echo "ERROR: Failed to download Nikki feed signing key." >&2
-              exit 1
-            fi
-            if ! grep -q '^untrusted comment:' "${NIKKI_KEY_TMP}"; then
-              echo "ERROR: Nikki key format invalid (expected usign public key)." >&2
-              sed -n '1,5p' "${NIKKI_KEY_TMP}"
-              exit 1
-            fi
-            if [ -x "./scripts/opkg-key" ] && command -v usign >/dev/null 2>&1; then
-              OPKG_KEYS="${PWD}/keys" ./scripts/opkg-key add "${NIKKI_KEY_TMP}"
-            else
-              cp -f "${NIKKI_KEY_TMP}" "keys/${NIKKI_FEED_NAME}.pub"
-            fi
-            echo "Current ImageBuilder keys:"
-            ls -lah keys
-          else
-            echo "Skip Nikki key import because OPKG_CHECK_SIGNATURE=0"
+          mkdir -p keys
+          NIKKI_KEY_TMP="${RUNNER_TEMP}/${NIKKI_FEED_NAME}-key-build.pub"
+          curl -fL --retry 3 --retry-delay 5 --retry-all-errors "${NIKKI_FEED_URL}/key-build.pub" -o "${NIKKI_KEY_TMP}"
+          if [ ! -s "${NIKKI_KEY_TMP}" ]; then
+            echo "ERROR: Failed to download Nikki feed signing key." >&2
+            exit 1
           fi
+          if ! grep -q '^untrusted comment:' "${NIKKI_KEY_TMP}"; then
+            echo "ERROR: Nikki key format invalid (expected usign public key)." >&2
+            sed -n '1,5p' "${NIKKI_KEY_TMP}"
+            exit 1
+          fi
+
+          # Use ImageBuilder bundled usign so opkg-key works on GitHub runner.
+          if [ -x "./scripts/opkg-key" ] && [ -x "./staging_dir/host/bin/usign" ]; then
+            PATH="${PWD}/staging_dir/host/bin:${PATH}" OPKG_KEYS="${PWD}/keys" ./scripts/opkg-key add "${NIKKI_KEY_TMP}"
+          else
+            cp -f "${NIKKI_KEY_TMP}" "keys/${NIKKI_FEED_NAME}.pub"
+          fi
+
+          echo "Current ImageBuilder keys:"
+          ls -lah keys
 
           echo "Checking Nikki Packages index: ${NIKKI_FEED_FULL_URL}/Packages.gz"
           curl -fI "${NIKKI_FEED_FULL_URL}/Packages.gz"
