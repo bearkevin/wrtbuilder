@@ -41,7 +41,7 @@
 - `EXTRA_PACKAGES`
   - 额外包列表（可继续追加）。
 - `ROOTFS_PARTSIZE_MB`
-  - x86 squashfs rootfs 分区大小，当前为 `1024`，用于提供约 1GB 的可写 Overlay 空间。
+  - x86 squashfs rootfs 分区大小，当前为 `1024`。workflow 会通过 ImageBuilder 的 `ROOTFS_PARTSIZE` 覆盖入口传入，用于提供约 1GB 的可写 Overlay 空间。
 - `NIKKI_FEED_NAME`
   - 默认 `nikki`。
 - `NIKKI_FEED_URL`

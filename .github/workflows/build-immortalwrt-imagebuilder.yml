@@ -357,7 +357,7 @@ jobs:
               PACKAGES="${BASE_PACKAGES} ${EXTRA_PACKAGES}" \
               FILES="${FILES_DIR}" \
               BIN_DIR="${OUTPUT_DIR}" \
-              CONFIG_TARGET_ROOTFS_PARTSIZE="${ROOTFS_PARTSIZE_MB}" \
+              ROOTFS_PARTSIZE="${ROOTFS_PARTSIZE_MB}" \
               V=s 2>&1 | tee "${LOG_FILE}"
             MAKE_RC=${PIPESTATUS[0]}
             set -e
