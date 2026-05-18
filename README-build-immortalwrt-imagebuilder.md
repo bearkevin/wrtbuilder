@@ -17,6 +17,7 @@
 - 先接入第三方 feed（默认 Nikki），再执行 `make image`。
 - Nikki 公钥会通过 `opkg-key add` 导入，确保 `Packages.sig` 验签可用。
 - 构建时会把 `Nikki` 的 feed 配置与 key 直接写入镜像（`/etc/opkg/customfeeds.conf` 与 `/etc/opkg/keys/`），开机后可直接 `opkg update` 使用。
+- x86 squashfs 镜像的 rootfs 分区大小设置为 `1024 MB`，用于提供约 1GB 的可写 Overlay 空间。
 - 在构建前自动补齐本地 `packages/Packages.gz` 占位索引，避免部分 release 在 CI 中触发 `package_index` 失败。
 - 若第三方 feed 出现偶发 `Checksum or size mismatch`，workflow 会自动清理 Nikki 缓存并重试构建。
 - 打包自定义软件包并上传 artifacts。
@@ -26,7 +27,7 @@
 在文件 `.github/workflows/build-immortalwrt-imagebuilder.yml` 的 `env` 中修改：
 
 - `IMMORTALWRT_VERSION`
-  - ImmortalWRT release 版本。
+  - ImmortalWRT release 版本，当前指定为 `24.10.6`。
 - `TARGET` / `SUBTARGET` / `PROFILE`
   - 当前默认分别是 `x86` / `64` / `generic`。
 - `IMAGEBUILDER_URL`
@@ -39,6 +40,8 @@
   - 官方/默认 feed 包列表（可继续追加）。
 - `EXTRA_PACKAGES`
   - 额外包列表（可继续追加）。
+- `ROOTFS_PARTSIZE_MB`
+  - x86 squashfs rootfs 分区大小，当前为 `1024`，用于提供约 1GB 的可写 Overlay 空间。
 - `NIKKI_FEED_NAME`
   - 默认 `nikki`。
 - `NIKKI_FEED_URL`
@@ -78,10 +81,11 @@
 
 你新增其他第三方 feed 时，按同样步骤加一个独立配置段即可。
 
-## 为什么 nikki / luci-app-nikki 不能只写进包列表
+## 为什么 nikki / luci-app-nikki / mihomo-meta 不能只写进包列表
 必须先说明这个区别：
 - `luci-app-wechatpush` 可先按普通包处理（在兼容 release 下通常来自默认可访问包源）。
-- `nikki` / `luci-app-nikki` 属于第三方 feed 包。
+- `mihomo-meta` / `nikki` / `luci-app-nikki` 属于第三方 feed 包。
+- 这里的 Nikki LuCI 包实际名称是 `luci-app-nikki`，不是 `nikki-luci`。
 
 如果不先接入第三方 feed，ImageBuilder 只看到默认源，`make image` 时会报找不到包。
 
