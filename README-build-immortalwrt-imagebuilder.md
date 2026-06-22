@@ -73,7 +73,8 @@
 - `sha256sums`
 
 ## 后续如何追加软件包
-- 常规包：直接追加到 `BASE_PACKAGES` 或 `EXTRA_PACKAGES`。
+- 常规包：直接追加到 `BASE_PACKAGES` 或 `EXTRA_PACKAGES`。当前 `BASE_PACKAGES` 已包含 LuCI、RPC、Argon 主题/配置、基础中文翻译、wechatpush 与 wechatpush 中文翻译。
+- Nikki feed 包：当前 `EXTRA_PACKAGES` 已包含 `mihomo-meta`、`nikki`、`luci-app-nikki` 与 `luci-i18n-nikki-zh-cn`。
 - 建议把“官方常规包”和“第三方 feed 包”分开维护，方便排错。
 
 ## 后续如何替换或新增第三方 feed
@@ -89,7 +90,7 @@
 ## 为什么 nikki / luci-app-nikki / mihomo-meta 不能只写进包列表
 必须先说明这个区别：
 - `luci-app-wechatpush` 可先按普通包处理（在兼容 release 下通常来自默认可访问包源）。
-- `mihomo-meta` / `nikki` / `luci-app-nikki` 属于第三方 feed 包。
+- `mihomo-meta` / `nikki` / `luci-app-nikki` / `luci-i18n-nikki-zh-cn` 属于第三方 feed 包。
 - 这里的 Nikki LuCI 包实际名称是 `luci-app-nikki`，不是 `nikki-luci`。
 
 如果不先接入第三方 feed，ImageBuilder 只看到默认源，`make image` 时会报找不到包。

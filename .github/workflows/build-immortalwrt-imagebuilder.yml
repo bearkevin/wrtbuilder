@@ -19,11 +19,12 @@ env:
   IMAGEBUILDER_FALLBACK_BASE_URLS: "https://mirrors.sjtug.sjtu.edu.cn/immortalwrt https://mirrors.nju.edu.cn/immortalwrt https://mirrors.ustc.edu.cn/immortalwrt"
 
   # Base packages from default feeds. Add more packages here when needed.
-  BASE_PACKAGES: "luci luci-mod-rpc luci-app-wechatpush"
+  BASE_PACKAGES: "luci luci-mod-rpc luci-theme-argon luci-app-argon-config luci-i18n-argon-config-zh-cn luci-i18n-base-zh-cn luci-app-wechatpush luci-i18n-wechatpush-zh-cn"
 
-  # Extra packages. mihomo-meta/nikki/luci-app-nikki are third-party feed packages,
+  # Extra packages. mihomo-meta/nikki/luci-app-nikki and its i18n package are
+  # third-party feed packages,
   # so feed integration must be completed before make image.
-  EXTRA_PACKAGES: "mihomo-meta nikki luci-app-nikki"
+  EXTRA_PACKAGES: "mihomo-meta nikki luci-app-nikki luci-i18n-nikki-zh-cn"
 
   # x86 squashfs overlay capacity is controlled by the rootfs partition size.
   ROOTFS_PARTSIZE_MB: "1024"
@@ -366,7 +367,7 @@ jobs:
               echo "Nikki opkg feed metadata sample:"
               sed -n '1,60p' "${NIKKI_PACKAGES_TXT}"
 
-              for pkg in mihomo-meta nikki luci-app-nikki; do
+              for pkg in mihomo-meta nikki luci-app-nikki luci-i18n-nikki-zh-cn; do
                 if ! grep -Eq "^Package:[[:space:]]+${pkg}$" "${NIKKI_PACKAGES_TXT}"; then
                   echo "ERROR: package '${pkg}' not found in Nikki opkg feed metadata." >&2
                   exit 1
@@ -384,7 +385,7 @@ jobs:
               echo "Nikki apk feed metadata sample:"
               sed -n '1,80p' "${NIKKI_PACKAGES_TXT}"
 
-              for pkg in mihomo-meta nikki luci-app-nikki; do
+              for pkg in mihomo-meta nikki luci-app-nikki luci-i18n-nikki-zh-cn; do
                 if ! awk -v pkg="${pkg}" '/name: / { if ($NF == pkg) found = 1 } END { exit found ? 0 : 1 }' "${NIKKI_PACKAGES_TXT}"; then
                   echo "ERROR: package '${pkg}' not found in Nikki apk feed metadata." >&2
                   exit 1
@@ -398,7 +399,7 @@ jobs:
               ;;
           esac
 
-          echo "Confirmed: mihomo-meta, nikki, and luci-app-nikki exist in Nikki feed metadata"
+          echo "Confirmed: mihomo-meta, nikki, luci-app-nikki, and luci-i18n-nikki-zh-cn exist in Nikki feed metadata"
 
       - name: Prepare runtime feed config and key for image rootfs
         shell: bash
@@ -511,7 +512,7 @@ jobs:
               break
             fi
 
-            if grep -Eq "Checksum or size mismatch for package (mihomo-meta|nikki|luci-app-nikki)|Cannot install package (mihomo-meta|nikki|luci-app-nikki)|unable to select packages|no such package|package .* not found" "${LOG_FILE}" && [ "${ATTEMPT}" -lt "${MAX_ATTEMPTS}" ]; then
+            if grep -Eq "Checksum or size mismatch for package (mihomo-meta|nikki|luci-app-nikki|luci-i18n-nikki-zh-cn)|Cannot install package (mihomo-meta|nikki|luci-app-nikki|luci-i18n-nikki-zh-cn)|unable to select packages|no such package|package .* not found" "${LOG_FILE}" && [ "${ATTEMPT}" -lt "${MAX_ATTEMPTS}" ]; then
               echo "Detected transient Nikki package index/cache mismatch. Cleaning Nikki cache and retrying..."
               rm -f dl/nikki* dl/*nikki* dl/mihomo* dl/*mihomo* dl/*.apk || true
               rm -rf build_dir/target-x86_64_musl/root-x86 || true
