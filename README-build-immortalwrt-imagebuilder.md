@@ -15,10 +15,14 @@
 - 自动下载指定版本的 ImmortalWRT ImageBuilder（主 URL 失败时自动重试备用镜像）。
 - ImageBuilder 命中哪个镜像源，就自动把默认包仓库地址切到同一镜像源，避免下载到 tar 包但后续包索引仍走不可达主站。
 - 先接入第三方 feed（默认 Nikki），再执行 `make image`。
-- Nikki 公钥会通过 `opkg-key add` 导入，确保 `Packages.sig` 验签可用。
-- 构建时会把 `Nikki` 的 feed 配置与 key 直接写入镜像（`/etc/opkg/customfeeds.conf` 与 `/etc/opkg/keys/`），开机后可直接 `opkg update` 使用。
+- workflow 会自动识别 ImageBuilder 使用 `opkg` 还是 `apk`：
+  - 24.10 及更早的 opkg ImageBuilder 会写入 `repositories.conf`，并通过 `opkg-key add` 导入 Nikki 的 usign key。
+  - 25.12 及更新的 apk ImageBuilder 会写入 `repositories`，并导入 Nikki 的 `public-key.pem`。
+- 构建时会把 `Nikki` 的 feed 配置与 key 直接写入镜像：
+  - opkg 固件写入 `/etc/opkg/customfeeds.conf` 与 `/etc/opkg/keys/`，开机后可直接 `opkg update`。
+  - apk 固件写入 `/etc/apk/repositories.d/customfeeds.list` 与 `/etc/apk/keys/`，开机后可直接 `apk update`。
 - x86 squashfs 镜像的 rootfs 分区大小设置为 `1024 MB`，用于提供约 1GB 的可写 Overlay 空间。
-- 在构建前自动补齐本地 `packages/Packages.gz` 占位索引，避免部分 release 在 CI 中触发 `package_index` 失败。
+- 在构建前自动按包管理器处理本地索引：opkg release 补齐 `packages/Packages.gz`，apk release 由 ImageBuilder 从 bundled `.apk` 生成 `packages.adb`。
 - 若第三方 feed 出现偶发 `Checksum or size mismatch`，workflow 会自动清理 Nikki 缓存并重试构建。
 - 打包自定义软件包并上传 artifacts。
 - 上传前会校验是否存在 `*generic-squashfs-combined-efi.img.gz`，若不存在直接失败。
@@ -27,7 +31,7 @@
 在文件 `.github/workflows/build-immortalwrt-imagebuilder.yml` 的 `env` 中修改：
 
 - `IMMORTALWRT_VERSION`
-  - ImmortalWRT release 版本，当前指定为 `24.10.6`。
+  - ImmortalWRT release 版本，当前指定为 `25.12.0`。
 - `TARGET` / `SUBTARGET` / `PROFILE`
   - 当前默认分别是 `x86` / `64` / `generic`。
 - `IMAGEBUILDER_URL`
@@ -47,8 +51,8 @@
 - `NIKKI_FEED_URL`
   - 默认 `https://nikkinikki.pages.dev`。
 - `OPKG_CHECK_SIGNATURE`
-  - 默认 `0`（更适合第三方 feed 的 CI 构建稳定性）。
-  - 设为 `1` 可启用签名校验（需要可用的签名 key 与 `usign` 环境）。
+  - 仅适用于 opkg release。默认 `0`（更适合第三方 feed 的 CI 构建稳定性）。
+  - 设为 `1` 可启用 opkg 签名校验（需要可用的签名 key 与 `usign` 环境）。
 - `ARTIFACT_RETENTION_DAYS`
   - artifact 保留天数。
 
@@ -74,10 +78,11 @@
 
 ## 后续如何替换或新增第三方 feed
 当前 workflow 已把 Nikki 作为模板流程：
-1. 追加 feed 配置到 `repositories.conf`（必要时同步到 `repositories`）。
-2. 下载该 feed 的签名 key 到 ImageBuilder 的 `keys/`。
-3. 刷新包索引并确认目标包可见。
-4. 再执行 `make image`。
+1. 自动检测 ImageBuilder 包管理器。
+2. opkg release 追加 feed 配置到 `repositories.conf`；apk release 追加 `.../packages.adb` 到 `repositories`。
+3. 下载该 feed 的签名 key 到 ImageBuilder 的 `keys/`。
+4. 刷新包索引并确认目标包可见。
+5. 再执行 `make image`。
 
 你新增其他第三方 feed 时，按同样步骤加一个独立配置段即可。
 
